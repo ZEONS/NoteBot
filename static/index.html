@@ -27,28 +27,57 @@
 
             <div class="sidebar-section">
                 <h3>📂 지식 소스 (<span id="note-count">0</span>)</h3>
+                <div id="drop-zone" class="drop-zone">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    <span>파일을 여기에 드래그하세요</span>
+                    <input type="file" id="file-upload" class="hidden" multiple accept=".md,.txt,.pdf">
+                </div>
                 <div id="notes-list" class="notes-list">
                     <!-- Notes will be injected here -->
                 </div>
             </div>
 
             <div class="sidebar-footer">
-                <div class="settings-expander">
-                    <button id="settings-toggle" class="icon-btn">
-                        <i class="fas fa-cog"></i> 설정
-                    </button>
-                </div>
-                <div id="settings-panel" class="settings-panel hidden">
-                    <label for="api-key-input">Gemini API Key</label>
-                    <div class="api-input-group">
-                        <input type="password" id="api-key-input" placeholder="AIza...">
-                        <button id="save-key-btn" class="icon-btn">💾</button>
-                    </div>
-                    <button id="diag-btn" class="secondary-btn">모델 진단</button>
-                    <div id="diag-result" class="diag-result"></div>
-                </div>
+                <button id="settings-toggle" class="settings-btn">
+                    <i class="fas fa-cog"></i> 설정 및 모델 관리
+                </button>
             </div>
         </aside>
+
+        <!-- Settings Modal -->
+        <div id="settings-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2><i class="fas fa-sliders-h"></i> 시스템 설정</h2>
+                    <button class="close-modal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="setting-item">
+                        <label>Gemini API Key</label>
+                        <div class="api-input-wrapper">
+                            <input type="password" id="api-key-input" placeholder="AIza...">
+                            <span class="visibility-toggle"><i class="fas fa-eye"></i></span>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <label>기본 사용 모델</label>
+                        <select id="model-select">
+                            <option value="">모델 로딩 중...</option>
+                        </select>
+                    </div>
+                    <div class="setting-item">
+                        <button id="diag-btn" class="diag-btn">
+                            <i class="fas fa-stethoscope"></i> API 연결 진단
+                        </button>
+                        <div id="diag-result" class="diag-result"></div>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button id="save-key-btn" class="primary-btn">저장 및 적용</button>
+                    <button class="secondary-btn close-modal">취소</button>
+                </div>
+            </div>
+        </div>
 
         <!-- Main Content -->
         <main class="main-content">
@@ -94,6 +123,22 @@
         </div>
     </div>
 
-    <script src="app.js"></script>
+    <!-- Delete Confirmation Modal -->
+    <div id="delete-modal" class="modal hidden">
+        <div class="modal-content glass confirm-modal">
+            <div style="font-size: 3rem; color: #ef4444; margin: 20px 0 16px;">
+                <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <h3>소스 삭제 확인</h3>
+            <p id="delete-confirm-text" style="margin-top: 12px;">정말로 이 소스를 삭제하시겠습니까?</p>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 8px;">이 작업은 되돌릴 수 없습니다.</p>
+            <div class="confirm-actions">
+                <button id="cancel-delete-btn" class="btn-secondary">취소</button>
+                <button id="confirm-delete-btn" class="btn-danger">삭제하기</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js?v=3"></script>
 </body>
 </html>
