@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import google.generativeai as genai
 from dotenv import load_dotenv, set_key
+import fitz  # PyMuPDF
 
 # .env 파일 로드
 env_path = Path(__file__).parent / ".env"
@@ -20,17 +21,19 @@ app = FastAPI(title="EASYSAFE NoteBot API")
 
 # 데이터 및 경로 설정
 NOTES_FILE = "notes.json"
+NOTES_DIR = Path("./my_notes")
+NOTES_DIR.mkdir(exist_ok=True)
 STATIC_DIR = Path(__file__).parent / "static"
 STATIC_DIR.mkdir(exist_ok=True)
 
 # 시스템 프롬프트
-SYSTEM_PROMPT = """당신은 사용자의 노트를 기반으로 답변하는 전문 AI 비서입니다.
+SYSTEM_PROMPT = """당신은 사용자의 개인 지식 베이스를 기반으로 답변하는 전문 조수입니다.
 반드시 아래 규칙을 지키세요:
-1. 답변은 제공된 '등록된 노트 목록'의 내용에만 근거하여 작성하세요.
-2. 노트에 없는 내용에 대해서는 "죄송합니다. 관련 내용을 노트에서 찾을 수 없습니다."라고 답변하세요.
-3. 답변 내에 인용한 정보가 담긴 노트를 [노트 제목] 형태로 반드시 명시하세요.
-4. 친절하고 명확한 한국어로 답변하세요.
-"""
+1. 제공된 <Context> 및 '등록된 노트' 내용에만 근거하여 답변하세요.
+2. 정보가 충분하지 않거나 내용이 없으면 "노트에서 관련 정보를 찾을 수 없습니다."라고 정직하게 답변하세요.
+3. 답변 끝에 반드시 해당 정보의 출처 파일명 또는 노트 제목을 [Source: 파일명] 또는 [노트: 제목] 형태로 명시하세요.
+4. 모든 답변은 친절하고 정중한 한국어로 작성하세요.
+5. 외부 지식을 섞지 마세요."""
 
 # 모델
 class Note(BaseModel):
@@ -38,6 +41,7 @@ class Note(BaseModel):
     title: str
     content: str
     date: Optional[str] = None
+    type: Optional[str] = "json"
 
 class ChatRequest(BaseModel):
     message: str
@@ -45,52 +49,70 @@ class ChatRequest(BaseModel):
 
 # 헬퍼 함수
 def load_notes():
-    if not os.path.exists(NOTES_FILE):
-        return {}
-    with open(NOTES_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    """notes.json 파일과 ./my_notes/ 폴더의 파일들을 취합하여 반환."""
+    all_notes = {}
+    
+    # 1. JSON 기반 노트 로드
+    if os.path.exists(NOTES_FILE):
+        try:
+            with open(NOTES_FILE, "r", encoding="utf-8") as f:
+                json_data = json.load(f)
+                for k, v in json_data.items():
+                    all_notes[k] = {**v, "type": "json"}
+        except:
+            pass
 
-def save_notes(notes):
-    with open(NOTES_FILE, "w", encoding="utf-8") as f:
-        json.dump(notes, f, ensure_ascii=False, indent=4)
+    # 2. 폴더 내 파일 로드 (.md, .txt, .pdf)
+    if NOTES_DIR.exists():
+        for file_path in NOTES_DIR.glob("*"):
+            ext = file_path.suffix.lower()
+            if ext in [".md", ".txt"]:
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        all_notes[file_path.name] = {
+                            "title": file_path.name,
+                            "content": f.read(),
+                            "date": datetime.fromtimestamp(file_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M"),
+                            "type": "file"
+                        }
+                except:
+                    pass
+            elif ext == ".pdf":
+                try:
+                    doc = fitz.open(file_path)
+                    content = "".join([page.get_text() for page in doc])
+                    doc.close()
+                    if content.strip():
+                        all_notes[file_path.name] = {
+                            "title": file_path.name,
+                            "content": content,
+                            "date": datetime.fromtimestamp(file_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M"),
+                            "type": "file"
+                        }
+                except:
+                    pass
+                    
+    return all_notes
 
 def build_context(notes):
     parts = []
-    for note in notes.values():
-        parts.append(f"--- 노트: 「{note['title']}」 ---\n{note['content']}\n")
-    return "\n".join(parts)
+    for name, note in notes.items():
+        source_label = f"Source: {name}" if note.get("type") == "file" else f"노트: {note.get('title')}"
+        parts.append(f"[{source_label}]\n{note['content']}\n")
+    return "\n\n".join(parts)
 
 # API 엔드포인트
-@app.get("/api/notes", response_model=List[Note])
+@app.get("/api/notes")
 async def get_notes():
     notes = load_notes()
-    return [Note(id=k, **v) for k, v in notes.items()]
-
-@app.post("/api/notes")
-async def add_note(note: Note):
-    notes = load_notes()
-    note_id = str(uuid.uuid4())
-    new_note = {
-        "title": note.title,
-        "content": note.content,
-        "date": datetime.now().strftime("%Y-%m-%d %H:%M")
-    }
-    notes[note_id] = new_note
-    save_notes(notes)
-    return {"id": note_id, **new_note}
-
-@app.delete("/api/notes/{note_id}")
-async def delete_note(note_id: str):
-    notes = load_notes()
-    if note_id in notes:
-        del notes[note_id]
-        save_notes(notes)
-        return {"status": "success"}
-    raise HTTPException(status_code=404, detail="Note not found")
+    result = []
+    for k, v in notes.items():
+        result.append({"id": k, **v})
+    return result
 
 @app.post("/api/chat")
 async def chat(request: ChatRequest):
-    api_key = os.getenv("GOOGLE_API_KEY")
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not api_key:
         raise HTTPException(status_code=400, detail="API Key is not set")
     
@@ -102,40 +124,36 @@ async def chat(request: ChatRequest):
         role = "사용자" if msg["role"] == "user" else "AI"
         history_text += f"{role}: {msg['content']}\n"
     
-    prompt = f"""## 등록된 노트 목록
+    full_prompt = f"""<Context>
 {context}
+</Context>
 
-## 이전 대화 기록
+<History>
 {history_text if history_text else "(없음)"}
+</History>
 
-## 현재 질문
-{request.message}
-
-위 노트의 내용에만 근거하여 답변하고, 반드시 [노트 제목] 형태로 출처를 밝히세요."""
+질문: {request.message}"""
 
     try:
         genai.configure(api_key=api_key)
-        # 폴백 로직 적용
-        target_models = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash", "gemini-pro"]
+        target_models = ["gemini-flash-latest", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-pro-latest"]
         
         last_error = ""
         for m_name in target_models:
             try:
                 model = genai.GenerativeModel(model_name=m_name, system_instruction=SYSTEM_PROMPT)
-                response = model.generate_content(prompt)
+                response = model.generate_content(full_prompt)
                 return {"answer": response.text}
             except Exception as e:
                 last_error = str(e)
-                if "404" not in last_error:
-                    raise e
                 continue
-        raise Exception(f"모든 모델 404: {last_error}")
+        raise Exception(f"사용 가능한 모델을 찾을 수 없습니다: {last_error}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/models")
 async def list_available_models():
-    api_key = os.getenv("GOOGLE_API_KEY")
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not api_key:
         return {"models": []}
     try:
@@ -150,14 +168,14 @@ async def save_settings(data: dict):
     api_key = data.get("api_key")
     if api_key:
         api_key = api_key.strip()
-        set_key(str(env_path), "GOOGLE_API_KEY", api_key)
-        os.environ["GOOGLE_API_KEY"] = api_key
+        set_key(str(env_path), "GEMINI_API_KEY", api_key)
+        os.environ["GEMINI_API_KEY"] = api_key
         return {"status": "success"}
     return {"status": "failed"}
 
 @app.get("/api/settings")
 async def get_settings():
-    api_key = os.getenv("GOOGLE_API_KEY", "")
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY", "")
     return {"api_key": api_key}
 
 # 정적 파일 서빙
@@ -165,4 +183,4 @@ app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8001)

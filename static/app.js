@@ -51,15 +51,29 @@ document.addEventListener('DOMContentLoaded', () => {
         notes.forEach(note => {
             const item = document.createElement('div');
             item.className = 'note-item';
+            
+            let iconClass = 'fa-sticky-note';
+            const titleLower = note.title.toLowerCase();
+            if (titleLower.endsWith('.pdf')) iconClass = 'fa-file-pdf';
+            else if (titleLower.endsWith('.md')) iconClass = 'fa-file-code';
+            else if (titleLower.endsWith('.txt')) iconClass = 'fa-file-alt';
+            
+            const isFile = note.type === 'file';
+            
             item.innerHTML = `
+                <div class="note-icon">
+                    <i class="fas ${iconClass}"></i>
+                </div>
                 <div class="note-info">
                     <h4>${note.title}</h4>
-                    <p>${note.date}</p>
+                    <p>${note.date} ${isFile ? '<span class="tag">파일</span>' : ''}</p>
                 </div>
                 <div class="note-actions">
+                    ${isFile ? '' : `
                     <button class="icon-btn delete-note" data-id="${note.id}">
                         <i class="fas fa-trash"></i>
                     </button>
+                    `}
                 </div>
             `;
             item.addEventListener('click', (e) => {
