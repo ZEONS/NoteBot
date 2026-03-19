@@ -38,3 +38,13 @@ ENV/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Deployment & Archives
+*.zip
+*.log
+server.log
+
+# User Data & Backups
+my_notes/
+*.json.bak
+notes.json
