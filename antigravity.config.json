@@ -1,0 +1,32 @@
+{
+    "models": {
+        "local": {
+            "provider": "openai-compatible",
+            "baseUrl": "http://localhost:11434",
+            "model": "gemma4:latest",
+            "apiKey": "ollama",
+            "temperature": 0.7,
+            "maxTokens": 8192,
+            "contextWindow": 128000
+        },
+        "cloud": {
+            "provider": "google",
+            "model": "gemini-3-flash",
+            "temperature": 0.7,
+            "maxTokens": 8192
+        }
+    },
+    "defaultModel": "cloud",
+    "fallbacks": [
+        {
+            "enabled": true,
+            "model": "gemini-3-flash",
+            "trigger": "context_exceeded"
+        },
+        {
+            "enabled": true,
+            "model": "gemini-3.1-pro",
+            "trigger": "error"
+        }
+    ]
+}
